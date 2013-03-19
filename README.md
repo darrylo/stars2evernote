@@ -1,3 +1,6 @@
+NOTE: NOT YET FUNCTIONAL -- DO NOT USE
+======================================
+
 stars2evernote.rb -- convert from google reader json to evernote enex
 =====================================================================
 
@@ -85,6 +88,14 @@ Known Issues
 ------------
 
 These may or may not be addressed:
+
+* When importing, evernote imports all notes into a single notebook.
+  There is no way to control this, as the .enex format does not have a
+  way of controlling this.
+
+* However, it may be possible to assign tags to the notes, based upon
+  the feed from which the note originated.  This has not been
+  implemented, though.
 
 * Evernote titles have a maximum length of 255 (?) characters.  Any title
   longer than this will be silently truncated.
