@@ -23,7 +23,7 @@
 #    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
 ###############################################################################
-# Version 0.8
+# Version 0.8, March 19, 2013
 ###############################################################################
 
 require 'json'
@@ -128,7 +128,7 @@ class ReaderItem
 
   public
 
-  attr_reader :valid, :title, :content, :source_url, :created, :modified
+  attr_reader :id, :valid, :title, :content, :source_url, :created, :modified
 
   # Turn debugging on/off
   def ReaderItem.set_debug(debug)
@@ -222,7 +222,7 @@ class TranslateReaderStarredToEnex
     true
   end
 
-  def translate(item, start_offset = 0, length = -1)
+  def translate(item, start_offset = 0, length = -1, only_feed = nil)
 
     title = item['title']
     if title.nil? then
@@ -286,7 +286,8 @@ class TranslateReaderStarredToEnex
     site_url.strip!
 
     if ((start_offset >= 0) && (@read_count < start_offset)) || 
-        ((length > 0) && (@read_count >= start_offset + length)) then
+        ((length > 0) && (@read_count >= start_offset + length)) ||
+        (only_feed && only_feed != site) then
       @read_count = @read_count + 1
       return
     end
@@ -322,10 +323,10 @@ class TranslateReaderStarredToEnex
     @sites = {}
   end
 
-  def read_and_translate(file, start_offset = 0, length = -1)
+  def read_and_translate(file, start_offset = 0, length = -1, only_feed = nil)
     read_json(file)
     data["items"].each { |item|
-      translate(item, start_offset, length)
+      translate(item, start_offset, length, only_feed)
     }
   end
 
@@ -340,7 +341,14 @@ class TranslateReaderStarredToEnex
   def print_translated(outstream)
     print_header(outstream)
     @translated_items.each { |item|
-      
+      if not item.valid then
+        # skip invalid items
+        if @@debug then
+          STDERR.print "Skipping invalid item id###{item.id}\n"
+        end
+        next
+      end
+
       outstream.print "<note>\n"
       outstream.print "<title>", item.title, "</title>\n"
 
@@ -367,9 +375,21 @@ class TranslateReaderStarredToEnex
       outstream.print "</note-attributes>\n"
 
       outstream.print "</note>\n"
-      
     }
     print_trailer(outstream)
+  end
+
+  def dump
+    @translated_items.each { |item|
+      if not item.valid then
+        # skip invalid items
+        if @@debug then
+          STDERR.print "Skipping invalid item id###{item.id}\n"
+        end
+        next
+      end
+      pp item
+    }
   end
 end
 
@@ -381,12 +401,16 @@ if $0 == __FILE__ then
   start = 0
   length = -1
   mode = 0
+  only_feed = nil
 
   opts = GetoptLong.new(
+                        [ "--debug", GetoptLong::NO_ARGUMENT ],
+                        [ "--dump", GetoptLong::NO_ARGUMENT ],
+                        [ "--feed", "-f", GetoptLong::REQUIRED_ARGUMENT ],
                         [ "--start", "-s", GetoptLong::REQUIRED_ARGUMENT ],
                         [ "--length", "-l", GetoptLong::REQUIRED_ARGUMENT ],
+                        [ "--list-feeds", "-L", GetoptLong::NO_ARGUMENT ],
                         [ "--info", "-i", GetoptLong::NO_ARGUMENT ],
-                        [ "--sites", "-S", GetoptLong::NO_ARGUMENT ],
                         )
 
   opts.each { |option, value|
@@ -394,10 +418,19 @@ if $0 == __FILE__ then
       start = value.to_i
     elsif option == "--length" then
       length = value.to_i
+    elsif option == "--feed" then
+      only_feed = value.strip
+      if only_feed.empty? then
+        only_feed = nil
+      end
+    elsif option == "--debug" then
+      ReaderItem.set_debug(true)
     elsif option == "--info" then
       mode = 1
-    elsif option == "--sites" then
+    elsif option == "--list-feeds" then
       mode = 2
+    elsif option == "--dump" then
+      mode = 3
     end
   }
 
@@ -410,7 +443,7 @@ if $0 == __FILE__ then
 
   a = TranslateReaderStarredToEnex.new()
   begin
-    a.read_and_translate(infile, start, length)
+    a.read_and_translate(infile, start, length, only_feed)
   rescue JSON::ParserError => e
     STDERR.print "ERROR parsing file, \"#{infile}\".\n"
     STDERR.print "Occasionally, the Google Takeout mechanism for Google Reader silently
@@ -437,6 +470,9 @@ set."
     a.get_sites.sort.each { |site|
       print site, "\n"
     }
+  elsif mode == 3 then
+    # dump data
+    a.dump
   else
     raise
   end
