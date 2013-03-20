@@ -74,7 +74,7 @@ OPTIONS can be:
 <dd>Dump out parsed json data to stdout.  No conversion is done.  Mainly used
 for reporting problem notes that aren't converted properly, and are causing
 Evernote to refuse to read them.</dd>
-<dt><tt>-f</tt>, <tt>--feed-</tt><i>feed-name</i></dt>
+<dt><tt>-f</tt>, <tt>--feed=</tt><i>feed-name</i></dt>
 <dd>Only process notes that came from feed, "<i>feed-name</i>".  The feed name
 must be exactly one of the feeds displayed by the `--list-feeds` option.  This
 option can only be specified once.  By extracting a single feed, you can use
@@ -139,7 +139,7 @@ Display a list of feeds in notes number 10-19:
 Only convert notes in the feed named, "Ye Old Google Times" (use
 `--list-feeds` to see a list of feed names):
 
-    stars2evernote.rb --feed "Ye Old Google Times" starred.json
+    stars2evernote.rb --feed="Ye Old Google Times" starred.json
 
 
 
