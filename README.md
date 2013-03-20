@@ -1,3 +1,5 @@
+NOTE: Synchronization is broken -- DO NOT USE THIS VERSION.
+
 stars2evernote.rb -- convert from Google Reader JSON to Evernote enex
 =====================================================================
 
