@@ -63,7 +63,9 @@ class ReaderItem
 
   # ENEX disallows these elements
   @@bad_regexp = 
-    Regexp.new("<(" + ["applet",
+    Regexp.new("<(" + [
+                       "applet",
+                       "audio",
                        "base",
                        "basefont",
                        "bgsound",
@@ -104,13 +106,27 @@ class ReaderItem
                       ].join('|') + ")\\b")
 
   # This regexp is used to strip out elements and their matching closing tags.
-  @@element = Regexp.new("^(.*)<([^ \t>]+)[^>]*>(.*?)</\\2[^>]*>(.*)$", Regexp::MULTILINE)
+  @@element = Regexp.new("^(.*)<([^ \t>]+)[^>]*>(.*?)</\\2[^>]*>(.*)$",
+                         Regexp::MULTILINE)
+
+  @@close_elements_basic = Regexp.new("^(.*)<(hr|br)>(.*)$",
+                                      Regexp::MULTILINE)
+  @@close_elements = Regexp.new("^(.*)<(img|hr|br)(\\s+[^>]*[^/])>(.*)$", 
+                                Regexp::MULTILINE)
+  @@img_fixups = Regexp.new("^(.*<img\\s+.*)\\bismap\\b(\\s*[^=][^>]*>.*)$", 
+                            Regexp::MULTILINE)
+
+  @@unclosed_open = Regexp.new("^(.*)<(p)(\\b[^>]*)>(.*)$",
+                               Regexp::MULTILINE)
+
+  @@javascript_link = Regexp.new("^(.*)<a\\s[^>]*\\bhref\\s*=\\s*\"javascript:[^\">]+\"[^>]*>(.*?)</a>(.*)$",
+                                 Regexp::MULTILINE)
 
   @@debug = false
 
   # Convert key characters to HTML character encodings:
   def encode(text)
-    text.gsub!("&", "&amp;")
+    text.gsub!(/&(?!amp;)/, "&amp;")
     text.gsub!("<", "&lt;")
     text.gsub!(">", "&gt;")
     return text
@@ -118,12 +134,107 @@ class ReaderItem
 
   # Cheesy func to prettify and clean up text for use as a description or tag.
   def unencode(text)
-    text.gsub!("\n", "")
     text.gsub!("&#39;", "'")
     text.gsub!("&quot;", '"')
     text.gsub!("&amp;", "&")	# Need this because encode() puts it back, if
 				# used
     return text
+  end
+
+  # This is so horribly grotesque, because it utterly ignores the
+  # nesting of any intermediate elements ...
+  def gobble_unclosed_open(content)
+    #print "\nContent before: '#{content}'\n\n"
+
+    processed = ""
+    content_to_process = content
+    # Find a candidate unclosed element ...
+    while m = @@unclosed_open.match(content_to_process)
+      # Tear it apart ...
+      preamble = m[1]
+      element = m[2]
+      element_args = m[3]
+      rest = m[4]
+
+      processed << preamble
+
+      # Look for a closing element ...
+      next_elem = Regexp.new("^(.*)(<(/)?#{element}\\b[^>]*>)(.*)$",
+                             Regexp::MULTILINE)
+      if m2 = next_elem.match(rest) then
+        #
+        # We seem to have found something.  Hopefully, it's the right
+        # one, but we have absolutely no way of knowing, since we're
+        # not doing it right.
+        #
+        # Now put the line back together, but possibly stripping out
+        # any unclosed elements ...
+        #
+        processed << "<" + element + element_args + ">"
+        if m2[3].empty? then
+          # opening element
+          processed << m2[1]
+          processed << gobble_unclosed_open(m2[2] + m2[4])
+          content_to_process = ""
+          break
+        else
+          # closing element
+          processed << m2[1] << m2[2]
+          content_to_process = m2[4]
+        end
+      else
+        # No closing element -- kill the opening element
+        content = preamble + rest
+        content_to_process = ""
+        break
+      end
+    end
+    processed << content_to_process
+    content = processed
+
+    #print "\nContent after: '#{content}'\n\n"
+    return content
+  end
+
+  def fixup_content(content)
+    #
+    # Convert basic elements like <hr> or <br> into <hr/> and <br/>
+    #
+    while m = @@close_elements_basic.match(content)
+      content = m[1] + "<#{m[2]}/>" +m[3]
+    end
+
+    #
+    # Convert more complex elements with attributes.
+    #
+    # Example: <img> get converted into <img ... />
+    # Hopefully, this should be safe, with no sites would use it
+    # like <img ... ></img>
+    #
+    while m = @@close_elements.match(content)
+      content = m[1] + "<#{m[2]}#{m[3]}/>" +m[4]
+    end
+
+    while m = @@img_fixups.match(content)
+      # strip out lone ismap attributes, because Evernote does not like 
+      # then without a value
+      content = m[1] + m[2]
+    end
+
+    # Kill "javascript:void" links, as Evernote doesn't like them
+    while m = @@javascript_link.match(content)
+      content = m[1] + m[2] + m[3]
+    end
+
+    #
+    # Ugh, this has got to be one of the nastier attempts at handling
+    # unclosed elements (just strip them out).  We really need a
+    # proper parser for this, but I'm just going to use the a**l probe
+    # method instead.
+    #
+    content = gobble_unclosed_open(content)
+
+    return content
   end
 
   public
@@ -138,7 +249,7 @@ class ReaderItem
   def initialize(id, title, content, source_url, created, modified, site, site_url)
     @id = id
     @title = title
-    @content = content
+    @content = fixup_content(content)
     @source_url = encode(source_url)
     @created = created
     @modified = modified
@@ -162,24 +273,23 @@ class ReaderItem
       @title = @title[0, 255]
     end
 
-    @site = unencode(@site)
+    @site = encode(@site)
+    @site.gsub!("\n", "")
     @site.gsub!(/[ \t]{2,}/, " ")
 
     added = false
     preamble = ""
     if @site and not @site.empty? then
-      preamble = preamble + "Source: #{@site}<br>\n"
+      preamble = preamble + "Source: #{@site}<br/>\n"
       added = true
     end
     if @site_url and not @site_url.empty? then
-      preamble = preamble + "Main Source URL: <a href=\"#{@site_url}\">#{@site_url}</a><br>\n"
+      preamble = preamble + "Main Source URL: <a href=\"#{encode(@site_url)}\">#{encode(@site_url)}</a><br/>\n"
       added = true
     end
     if added then
-      @content = preamble + "<hr><br>\n" + @content
+      @content = preamble + "<hr/><br/>\n" + @content
     end
-    # @content = "Source: #{@site}<br>\nMain Source URL: <a href=\"#{@site_url}\">#{@site_url}</a><br>\n<hr><br>\n" + @content
-
 
     @valid = true
     if m = @@bad_regexp.match(@content) then
@@ -190,7 +300,7 @@ class ReaderItem
         @content = m[1] + m[2]
       end
       if m = @@bad_regexp.match(@content) then
-        STDERR.print "Bad HTML element (#{m[1]}) found in \"#{@title}\"\n"
+        STDERR.print "Skipping note ###{@id}: Bad HTML element (#{m[1]}) found in \"#{@title}\"\n"
         @valid = false
       end
     end

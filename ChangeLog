@@ -1,0 +1,17 @@
+2013-03-21    <darrylo@fake.domain>
+
+	* While notes could be imported into a notebook, notebook
+	  synchronization was totally broken.  Much has been fixed, but there
+	  is still more work to do.
+
+	  In particular, Evernote requires that <table> height be specified,
+	  but there's no easy way to fix this.  Any notes with tables without
+	  explicit height specificatins will fail to synchronize.
+
+	* The <audio ... >...</audio> element has been banned, because there's
+	  no easy way of guaranteeing that the note usage meets Evernote's
+	  ENML requirements.  All occurrences are now completely stripped out.
+
+2013-03-19    <darrylo@fake.domain>
+
+	* Initial version 0.80 released
