@@ -1,10 +1,7 @@
-NOTE: Synchronization is broken -- DO NOT USE THIS VERSION.
-===========================================================
-
 stars2evernote.rb -- convert from Google Reader JSON to Evernote enex
 =====================================================================
 
-Version: 0.8, March 19, 2013
+Version: 0.81, March 23, 2013
 
 Stars2evernote.rb is a kludgy ruby script intended to convert starred Google
 Reader articles into something that can be imported into the Evernote desktop
@@ -16,6 +13,18 @@ format.  You then import this .enex file into the desktop client.  By doing
 this, the data import is reasonably fast, and there are no API networking
 issues to worry about.  The client might take a long time to synchronize,
 though.
+
+**IMPORTANT NOTE**: This script handles most, but not all starred articles.
+In particular, starred articles whose blurbs include tables will likely import
+but **NOT** synchronize (Evernote will forever banish such notes to the
+"Unsynced Notes" notebook).  Hopefully, you'll have few, if any, of these
+notes, which will have to be manually imported (you click on the article URL
+and manually re-clip the note into Evernote, as a new note).  Also note that
+the table may appear to be properly rendered the first time you view the
+Evenote note, but will probably be deleted by Evernote once you stop viewing
+the note (after which exporting the now "fixed" unsynchronizable note and
+re-importing it will result in something that will synchronize, but will be
+missing the table and anything else that Evernote does not like).
 
 This is a crude script, intended to be used from the command-line.  There are
 also significant issues -- see the list at the bottom.  In particular, this
@@ -34,9 +43,10 @@ Requirements
 
 * Ruby 1.9 or later.
 
-* You must have exported your Google Reader data via Google Takeout,
-  downloaded, and extracted the data.  You need the file, "starred.json", as
-  that is what you'll be feeding to this script.
+* You must have exported your Google Reader data via [Google
+  Takeout](https://www.google.com/takeout), downloaded, and extracted the
+  data.  You need the file, "starred.json", as that is what you'll be feeding
+  to this script.
 
   IMPORTANT NOTE: Google Takeout does not always properly export your data.
   In particular, you'll sometimes end up with a partial/truncated,
@@ -46,7 +56,7 @@ Requirements
   download).
 
 * You need the Evernote desktop client.  (Currently only tested with the
-  latest windows desktop client.)
+  windows desktop client, version "4.6.4.8136 (268644) Public".)
 
 
 Usage
@@ -55,7 +65,7 @@ Usage
     stars2evernote.rb [OPTIONS] FILE
 
 FILE is the name of the file that contains the Google Reader starred .json
-data; typically, "starred.json".
+data; typically, ``starred.json".
 
 WIthout any options, the script will read the .json file and produce .enex, in
 a file with the same name as the .json file, but with a .enex extension.  For
@@ -156,6 +166,26 @@ Note that issues may or may not be addressed:
   you're satisfied, you can either move the notes into a synchronized
   notebook, or just re-import the notes into a synchronized one.
 
+* Notes that contain tables may appear to import, but will often not
+  synchronize, because Evernote requires that all tables have a "height"
+  attribute, and many do not.  Notes with these tables will import but not
+  synchronize.  When the first synchronization attempt is made, Evernote will
+  move these notes to the "Unsynced Notes" notebook, and mark them as being
+  **forever** unsynchronizable (no amount of editing the unsynchronizable note
+  will make it synchronizable).
+
+  Unfortunately, there's no easy way for this to be fixed.  Hopefully, you
+  won't have very many of these, and so you can probably click on the URL and
+  create a new note in Evernote from the web page.
+
+* **IMPORTANT NOTE**: the very first time you view an unsynchronizable note,
+  the note might appear to render correctly.  However, viewing another note
+  and then re-viewing this unsynchronizable note will typically result in the
+  problematic parts being **deleted**, resulting in the loss of information.
+  If you then export and re-import this note, the note will then be
+  synchronizable (because Evernote deleted the parts that it did not like
+  after you viewed the note, but before you re-exported it).
+
 * When importing, Evernote imports all notes into a single notebook.
   There is no way to control this, as the .enex format does not have a
   way of controlling this.
@@ -181,6 +211,11 @@ Note that issues may or may not be addressed:
 * Starred items typically have a short HTML description.  Any element in this
   description disallowed by Evernote will be **silently removed** -- in
   partcular, this includes **everything** between the opening and closing tag.
+
+  **IMPORTANT NOTE**: Embedded youtube videos often use <iframe> elements,
+  which are disallowed by evernote and are thus removed by this script.  This
+  will result in the embedded youtube video being removed from the note,
+  without anything replacing it.
 
 * Note that after conversion and importing, any "images" in a converted note
   is a reference to a remote server image.  However, after you view the

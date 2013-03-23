@@ -111,7 +111,7 @@ class ReaderItem
 
   @@close_elements_basic = Regexp.new("^(.*)<(hr|br)>(.*)$",
                                       Regexp::MULTILINE)
-  @@close_elements = Regexp.new("^(.*)<(img|hr|br)(\\s+[^>]*[^/])>(.*)$", 
+  @@close_elements = Regexp.new("^(.*)<(img|hr|br|area)(\\s+[^>]*[^/])>(.*)$", 
                                 Regexp::MULTILINE)
   @@img_fixups = Regexp.new("^(.*<img\\s+.*)\\bismap\\b(\\s*[^=][^>]*>.*)$", 
                             Regexp::MULTILINE)
@@ -134,6 +134,7 @@ class ReaderItem
 
   # Cheesy func to prettify and clean up text for use as a description or tag.
   def unencode(text)
+    text.gsub!("\n", "")
     text.gsub!("&#39;", "'")
     text.gsub!("&quot;", '"')
     text.gsub!("&amp;", "&")	# Need this because encode() puts it back, if
@@ -157,46 +158,55 @@ class ReaderItem
       rest = m[4]
 
       processed << preamble
+      tentative_element = "<" + element + element_args + ">"
+      processed_middle = ""
+      closed = false
 
       # Look for a closing element ...
       next_elem = Regexp.new("^(.*)(<(/)?#{element}\\b[^>]*>)(.*)$",
                              Regexp::MULTILINE)
-      if m2 = next_elem.match(rest) then
+      while m2 = next_elem.match(rest)
         #
         # We seem to have found something.  Hopefully, it's the right
         # one, but we have absolutely no way of knowing, since we're
         # not doing it right.
         #
         # Now put the line back together, but possibly stripping out
-        # any unclosed elements ...
+        # any remaining unclosed elements ...
         #
-        processed << "<" + element + element_args + ">"
         if m2[3].empty? then
-          # opening element
-          processed << m2[1]
-          processed << gobble_unclosed_open(m2[2] + m2[4])
-          content_to_process = ""
-          break
+          # we found another opening element
+          #processed << "<" + element + element_args + ">"
+          processed_middle << m2[1]
+          #
+          done, not_done = gobble_unclosed_open(m2[2] + m2[4])
+          processed_middle << done
+          rest = not_done
         else
           # closing element
+          closed = true
+          processed << tentative_element << processed_middle
           processed << m2[1] << m2[2]
           content_to_process = m2[4]
+          break
         end
-      else
+      end
+      if not closed then
         # No closing element -- kill the opening element
-        content = preamble + rest
-        content_to_process = ""
+        processed << processed_middle
+        content_to_process = rest
         break
       end
     end
-    processed << content_to_process
-    content = processed
 
-    #print "\nContent after: '#{content}'\n\n"
-    return content
+    #print "\nContent after: '#{processed}', '#{content_to_process}'\n\n"
+    return processed, content_to_process
   end
 
   def fixup_content(content)
+
+    content.gsub!("]]>", "]]&gt;")
+
     #
     # Convert basic elements like <hr> or <br> into <hr/> and <br/>
     #
@@ -207,9 +217,9 @@ class ReaderItem
     #
     # Convert more complex elements with attributes.
     #
-    # Example: <img> get converted into <img ... />
-    # Hopefully, this should be safe, with no sites would use it
-    # like <img ... ></img>
+    # Example: <img> gets converted into <img ... />
+    # Hopefully, this should be safe, with no sites using it
+    # like <img ... ></img> -- this code breaks for that case.
     #
     while m = @@close_elements.match(content)
       content = m[1] + "<#{m[2]}#{m[3]}/>" +m[4]
@@ -226,13 +236,33 @@ class ReaderItem
       content = m[1] + m[2] + m[3]
     end
 
+    # Delete forbidden elements
+    @valid = true
+    while m = @@bad_regexp.match(content)
+      element = m[1]
+      fixer = Regexp.new("^(.*)<#{element}[^>]*>.*?</#{element}[^>]*>(.*)$", Regexp::MULTILINE)
+      #STDERR.print fixer.to_s, "\n"
+      fixed = false
+      if m = fixer.match(content)
+        content = m[1] + m[2]
+        fixed = true
+      end
+      if not fixed then
+        # Prevent infinite loop
+        STDERR.print "Skipping note ###{@id}: Bad HTML element (#{m[1]}) can't be fixed in \"#{@title}\"\n"
+        @valid = false
+        break
+      end
+    end
+
     #
     # Ugh, this has got to be one of the nastier attempts at handling
-    # unclosed elements (just strip them out).  We really need a
-    # proper parser for this, but I'm just going to use the a**l probe
-    # method instead.
+    # special unclosed elements (just strip them out).  We really need
+    # a proper parser for this, but I'm just going to use the a**l
+    # probe method instead.
     #
-    content = gobble_unclosed_open(content)
+    processed, content_to_process = gobble_unclosed_open(content)
+    content = processed + content_to_process
 
     return content
   end
@@ -249,7 +279,7 @@ class ReaderItem
   def initialize(id, title, content, source_url, created, modified, site, site_url)
     @id = id
     @title = title
-    @content = fixup_content(content)
+    @content = content
     @source_url = encode(source_url)
     @created = created
     @modified = modified
@@ -277,6 +307,9 @@ class ReaderItem
     @site.gsub!("\n", "")
     @site.gsub!(/[ \t]{2,}/, " ")
 
+    #
+    # If available, add feed location and main URL to note.
+    #
     added = false
     preamble = ""
     if @site and not @site.empty? then
@@ -291,19 +324,10 @@ class ReaderItem
       @content = preamble + "<hr/><br/>\n" + @content
     end
 
-    @valid = true
-    if m = @@bad_regexp.match(@content) then
-      element = m[1]
-      fixer = Regexp.new("^(.*)<#{element}[^>]*>.*?</#{element}[^>]*>(.*)$", Regexp::MULTILINE)
-      #STDERR.print fixer.to_s, "\n"
-      while m = fixer.match(@content)
-        @content = m[1] + m[2]
-      end
-      if m = @@bad_regexp.match(@content) then
-        STDERR.print "Skipping note ###{@id}: Bad HTML element (#{m[1]}) found in \"#{@title}\"\n"
-        @valid = false
-      end
-    end
+    #
+    # Now try to fix up the content to be palatable to Evernote
+    #
+    @content = fixup_content(@content)
 
     local_translate
   end

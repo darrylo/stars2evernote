@@ -1,3 +1,11 @@
+2013-03-23    <darrylo@fake.domain>
+
+	* Version 0.81 released
+
+	  Synchronization works much better, but any starred note with a
+	  <table> is likely unsynchronizable.  Unfortunately, there's no
+	  easy way to fix this.
+
 2013-03-21    <darrylo@fake.domain>
 
 	* While notes could be imported into a notebook, notebook
