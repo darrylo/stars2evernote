@@ -6,11 +6,16 @@
 #        taken from a google takeout .json file from a user's google reader
 #        data.
 #
+#        Instructions on how to use this can be found in the file,
+#        "README.md".
+#
+#
 #    Copyright (C) 2013 Darryl Okahata
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
 #    the Free Software Foundation; either version 2 of the License, or
+#
 #    (at your option) any later version.
 #
 #    This program is distributed in the hope that it will be useful,
@@ -22,8 +27,10 @@
 #    with this program; if not, write to the Free Software Foundation, Inc.,
 #    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 #
+#    A copy of the license can be found in the file, "COPYING".
+#
 ###############################################################################
-# Version 0.81, March 23, 2013
+# Version 0.85, March 24, 2013
 ###############################################################################
 
 require 'json'
@@ -34,7 +41,7 @@ begin
   require "stars2evernote-local.rb"
 rescue LoadError
   module Stars2EvernoteLocal
-    def local_translate
+    def local_fixup
     end
   end
 end
@@ -270,13 +277,15 @@ class ReaderItem
   public
 
   attr_reader :id, :valid, :title, :content, :source_url, :created, :modified
+  attr_reader :tags
 
   # Turn debugging on/off
   def ReaderItem.set_debug(debug)
     @@debug = debug
   end
 
-  def initialize(id, title, content, source_url, created, modified, site, site_url)
+  def initialize(id, title, content, source_url, created, modified,
+                 site, site_url, tags = [])
     @id = id
     @title = title
     @content = content
@@ -285,7 +294,9 @@ class ReaderItem
     @modified = modified
     @site = site
     @site_url = site_url
+    @tags = tags
 
+    # Strip out HTML from the title -- Evernote no likey
     while m = @@element.match(@title)
       @title = m[1] + m[3] + m[4]
     end
@@ -294,11 +305,13 @@ class ReaderItem
     @title.gsub!(/[ \t]{2,}/, " ")
 
     if @@debug and /&/.match(@title) then
+      # Warn about possible unhandled HTML character codes
       STDERR.print "Malformed title @#{@id}: '#{@title}'\n"
     end
 
     @title = encode(@title)
 
+    # Evernote titles have a 255 (?) character limit
     if @title.size > 255 then
       @title = @title[0, 255]
     end
@@ -310,18 +323,12 @@ class ReaderItem
     #
     # If available, add feed location and main URL to note.
     #
-    added = false
-    preamble = ""
+    @preamble = ""
     if @site and not @site.empty? then
-      preamble = preamble + "Source: #{@site}<br/>\n"
-      added = true
+      @preamble = @preamble + "Source: #{@site}<br/>\n"
     end
     if @site_url and not @site_url.empty? then
-      preamble = preamble + "Main Source URL: <a href=\"#{encode(@site_url)}\">#{encode(@site_url)}</a><br/>\n"
-      added = true
-    end
-    if added then
-      @content = preamble + "<hr/><br/>\n" + @content
+      @preamble = @preamble + "Main Source URL: <a href=\"#{encode(@site_url)}\">#{encode(@site_url)}</a><br/>\n"
     end
 
     #
@@ -329,7 +336,14 @@ class ReaderItem
     #
     @content = fixup_content(@content)
 
-    local_translate
+    local_fixup
+
+    if @content.nil? or @content.empty? then
+      @content = "<p></p>\n"
+    end
+    if @preamble and not @preamble.empty? then
+      @content = @preamble + "<hr/><br/>\n" + @content
+    end
   end
 
 end
@@ -337,6 +351,8 @@ end
 
 class TranslateReaderStarredToEnex
   private
+
+  @@user_cat = Regexp.new("^user/[0-9]+/label/([^/]+)$")
 
   def get_time_val(val)
     if val.nil? or (val.class == String and val.empty?) then
@@ -356,8 +372,10 @@ class TranslateReaderStarredToEnex
     true
   end
 
+  # Translate one item
   def translate(item, start_offset = 0, length = -1, only_feed = nil)
 
+    # Get the title
     title = item['title']
     if title.nil? then
       STDERR.print "NO TITLE: #{item.to_s}\n"
@@ -365,6 +383,7 @@ class TranslateReaderStarredToEnex
     end
     title.strip!
 
+    # Bet the blurb
     summary = item['summary']
     if summary.nil? then
       summary = item['content']
@@ -376,19 +395,12 @@ class TranslateReaderStarredToEnex
     end
     summary.strip!
 
-    if true then
-      created = get_time_val(item['published'])
-      modified = get_time_val(item['updated'])
-    else
-      created = item['timestampUsec']
-      if created then
-        created = created.to_i / 1000000
-      else
-        created = Time.now
-      end
-      modified = Time.now
-    end
+    # Preserve article creation/modification time
+    created = get_time_val(item['published'])
+    modified = get_time_val(item['updated'])
 
+    # Get the article URL.  Note that this is typically some RSS feed or
+    # something like a user-tracking URL.
     url = ""
     alternate = item['canonical']
     if alternate.nil? then
@@ -405,6 +417,7 @@ class TranslateReaderStarredToEnex
     end
     url.strip!
 
+    # Get the site name and main site URL
     site = "UNKNOWN"
     site_url = ""
     origin = item['origin']
@@ -419,6 +432,20 @@ class TranslateReaderStarredToEnex
     site.strip!
     site_url.strip!
 
+    # Get any user-added tags
+    tags = []
+    if item["categories"] then
+      item["categories"].each { |category|
+        if m = @@user_cat.match(category) then
+          #tags << m[1].downcase.capitalize
+          tags << m[1]
+        end
+      }
+    end
+
+    # Skip processing if this note is not going to be output (yes, this is not
+    # optimized, as notes are unnecessarily processed, but the added
+    # processing time is not that bad, and so we don't care (at the moment :).
     if ((start_offset >= 0) && (@read_count < start_offset)) || 
         ((length > 0) && (@read_count >= start_offset + length)) ||
         (only_feed && only_feed != site) then
@@ -426,9 +453,11 @@ class TranslateReaderStarredToEnex
       return
     end
 
+    # Store the translated article data
     @translated_items << ReaderItem.new(@read_count, title, summary, url,
-                                        created, modified, site, site_url)
+                                        created, modified, site, site_url, tags)
 
+    # Make a note of the site name
     @sites[site] = true
 
     @read_count = @read_count + 1
@@ -437,7 +466,7 @@ class TranslateReaderStarredToEnex
   def print_header(outstream)
     outstream.print "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <!DOCTYPE en-export SYSTEM \"http://xml.evernote.com/pub/evernote-export.dtd\">
-<en-export export-date=\"#{get_time_val(nil)}\" application=\"stars2evernote\" version=\"4.x\">
+<en-export export-date=\"#{get_time_val(nil)}\" application=\"stars2evernote\" version=\"1.x\">
 "
   end
 
@@ -472,7 +501,21 @@ class TranslateReaderStarredToEnex
     return (@translated_items.length)
   end
 
-  def print_translated(outstream)
+  def get_all_tags
+    all_tags = {}
+    @translated_items.each { |item|
+      if not item.valid then
+        # skip invalid items
+        next
+      end
+      item.tags.each { |tag|
+        all_tags[tag] = true
+      }
+    }
+    return all_tags.keys.sort
+  end
+
+  def print_translated(outstream, output_tags = true, output_blurb = true)
     print_header(outstream)
     @translated_items.each { |item|
       if not item.valid then
@@ -486,7 +529,8 @@ class TranslateReaderStarredToEnex
       outstream.print "<note>\n"
       outstream.print "<title>", item.title, "</title>\n"
 
-      outstream.print '<content>
+      if output_blurb then
+        outstream.print '<content>
 <![CDATA[
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE en-note SYSTEM "http://xml.evernote.com/pub/enml2.dtd">
@@ -496,9 +540,25 @@ class TranslateReaderStarredToEnex
       outstream.print '</en-note>]]>
 </content>
 '
+      else
+        outstream.print '<content>
+<![CDATA[
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE en-note SYSTEM "http://xml.evernote.com/pub/enml2.dtd">
+<en-note><p></p>
+</en-note>]]>
+</content>
+'
+      end
 
       outstream.print "<created>", item.created, "</created>\n"
       outstream.print "<updated>", item.modified, "</updated>\n"
+
+      if output_tags then
+        item.tags.each { |tag|
+          outstream.print "<tag>", tag, "</tag>\n"
+        }
+      end
 
       outstream.print "<note-attributes>\n"
       outstream.print "<source>", "stars2evernote", "</source>\n"
@@ -525,6 +585,7 @@ class TranslateReaderStarredToEnex
       pp item
     }
   end
+
 end
 
 
@@ -532,10 +593,18 @@ if $0 == __FILE__ then
 
   require 'getoptlong'
 
+  def exclusive_option
+    STDERR.print "ERROR: Sorry, only one of \"--info\", \"--list-feeds\", \"--list-tags\", or
+\"--dump\" can be specified.\n"
+    exit 1
+  end
+
   start = 0
   length = -1
   mode = 0
   only_feed = nil
+  handle_tags = true
+  output_blurb = true
 
   opts = GetoptLong.new(
                         [ "--debug", GetoptLong::NO_ARGUMENT ],
@@ -544,7 +613,10 @@ if $0 == __FILE__ then
                         [ "--start", "-s", GetoptLong::REQUIRED_ARGUMENT ],
                         [ "--length", "-l", GetoptLong::REQUIRED_ARGUMENT ],
                         [ "--list-feeds", "-L", GetoptLong::NO_ARGUMENT ],
+                        [ "--list-tags", GetoptLong::NO_ARGUMENT ],
                         [ "--info", "-i", GetoptLong::NO_ARGUMENT ],
+                        [ "--no-blurb", GetoptLong::NO_ARGUMENT ],
+                        [ "--no-tags", GetoptLong::NO_ARGUMENT ],
                         )
 
   opts.each { |option, value|
@@ -559,12 +631,30 @@ if $0 == __FILE__ then
       end
     elsif option == "--debug" then
       ReaderItem.set_debug(true)
+    elsif option == "--no-blurb" then
+      output_blurb = false
+    elsif option == "--no-tags" then
+      handle_tags = false
     elsif option == "--info" then
+      if mode != 0 then
+        exclusive_option
+      end
       mode = 1
     elsif option == "--list-feeds" then
+      if mode != 0 then
+        exclusive_option
+      end
       mode = 2
     elsif option == "--dump" then
+      if mode != 0 then
+        exclusive_option
+      end
       mode = 3
+    elsif option == "--list-tags" then
+      if mode != 0 then
+        exclusive_option
+      end
+      mode = 4
     end
   }
 
@@ -595,7 +685,7 @@ set."
   if mode == 0 then
     # Convert from .json to .enex
     outfile = File.basename(infile, ".json") + ".enex"
-    a.print_translated(File.open(outfile, "w"))
+    a.print_translated(File.open(outfile, "w"), handle_tags, output_blurb)
   elsif mode == 1 then
     # Just print some info about the notes
     print "Total number of items = #{a.num_items}\n"
@@ -607,6 +697,15 @@ set."
   elsif mode == 3 then
     # dump data
     a.dump
+  elsif mode == 4 then
+    tags = a.get_all_tags
+    if not tags.empty? then
+      tags.each { |tag|
+        print tag, "\n"
+      }
+    else
+      print "There are no tags.\n"
+    end
   else
     raise
   end

@@ -1,7 +1,7 @@
 stars2evernote.rb -- convert from Google Reader JSON to Evernote enex
 =====================================================================
 
-Version: 0.81, March 23, 2013
+Version: 0.85, March 24, 2013
 
 Stars2evernote.rb is a kludgy ruby script intended to convert starred Google
 Reader articles into something that can be imported into the Evernote desktop
@@ -101,6 +101,18 @@ done.</dd>
 <dt><tt>-L</tt>, <tt>--list-feeds</tt></dt>
 <dd>Read notes and display (to stdout) a list of feeds from which the notes
 originated.  No conversion is done.</dd>
+<dt><tt>--list-tags</tt></dt>
+<dd>Display a list of tags attached to the notes.  No conversion is done.
+This is useful for seeing what tags will be used/added to Evernote, without
+actually importing the notes.</dd>
+<dt><tt>--no-blurb</tt></dt>
+<dd>If a conversion is done, do not copy the RSS article blurb into the .enex
+file.  This can be useful if weird HTML in the blurb prevents Evernote from
+importing the .enex file.</dd>
+<dt><tt>--no-tags</tt></dt>
+<dd>Do not put the starred article tags into the .enex file.  By default,
+stars2evernote.rb will preserve any user-added tags and add them to the .enex
+file.  This option prevents that.</dd>
 <dt><tt>-s</tt>, <tt>--start=</tt><i>offset</i></dt>
 <dd>Start processing notes starting at note number <i>offset</i>.  Note that
 the first note is at offset zero.</dd>

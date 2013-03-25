@@ -1,3 +1,16 @@
+2013-03-24    <darrylo@fake.domain>
+
+	* Version 0.85 released.
+
+	* Tags added by the user in google reader are now imported by default.
+
+	* Adding of tags can now be suppressed with the --no-tags option.
+
+	* The starred article blurb can be suppressed (not included) in
+	  the translated .enex file using the --no-blurb option.  This
+	  exists just in case there is some weird html in starred articles
+	  that cause errors in Evernote when importing the .enex file.
+
 2013-03-23    <darrylo@fake.domain>
 
 	* Version 0.81 released
