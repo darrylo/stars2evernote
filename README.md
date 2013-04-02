@@ -1,7 +1,7 @@
 stars2evernote.rb -- convert from Google Reader JSON to Evernote enex
 =====================================================================
 
-Version: 0.85, March 24, 2013
+Version: 1.0, April 2, 2013
 
 Stars2evernote.rb is a kludgy ruby script intended to convert starred Google
 Reader articles into something that can be imported into the Evernote desktop
@@ -14,17 +14,8 @@ this, the data import is reasonably fast, and there are no API networking
 issues to worry about.  The client might take a long time to synchronize,
 though.
 
-**IMPORTANT NOTE**: This script handles most, but not all starred articles.
-In particular, starred articles whose blurbs include tables will likely import
-but **NOT** synchronize (Evernote will forever banish such notes to the
-"Unsynced Notes" notebook).  Hopefully, you'll have few, if any, of these
-notes, which will have to be manually imported (you click on the article URL
-and manually re-clip the note into Evernote, as a new note).  Also note that
-the table may appear to be properly rendered the first time you view the
-Evenote note, but will probably be deleted by Evernote once you stop viewing
-the note (after which exporting the now "fixed" unsynchronizable note and
-re-importing it will result in something that will synchronize, but will be
-missing the table and anything else that Evernote does not like).
+**IMPORTANT NOTE**: See the "Limitations" section, below, for important
+limitations.
 
 This is a crude script, intended to be used from the command-line.  There are
 also significant issues -- see the list at the bottom.  In particular, this
@@ -36,6 +27,35 @@ instructions are minimal, as it's assumed that users know how to run ruby
 scripts from the command line.
 
 See the file, COPYING, for licensing information.
+
+
+Limitations
+-----------
+
+The following limitations will likely never be addressed/fixed:
+
+* RSS article blurbs are typically HTML snippets, which this script tries to
+  massage into something Evernote will like.  However, please note that
+  Evernote disallows many HTML elements, and this script will silently remove
+  them.  For details on the prohibited elements, see [Evernote's enml
+  documentation](https://dev.evernote.com/start/core/enml.php).
+
+* Embedded youtube videos are silently deleted, because these are done using
+  an iframe, which is an Evernote prohibited element.
+
+* Articles whose blurbs contain tables will likely import but will **NOT**
+  synchronize.  Evernote will banish such notes to the "Unsynced Notes"
+  notebook, and absolutely no amount of editing will make the note
+  synchronizable.  This is caused by Evernote's requirement that all tables
+  must have explicit height specifications, which many do not.  Furthermote,
+  Evernote may display any such tables once (the very first time the note is
+  viewed), but appears to silently delete them after leaving the note.
+  Evernote seems to delete any html that it doesn't like.  Exporting the
+  unsyncronizable note and re-importing it will result in a synchronizable
+  note, but please be aware that this works only becase the rejected parts
+  have been silently deleted.
+
+* I'm sure there are others.  Please report any that you find.
 
 
 Requirements
